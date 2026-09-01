@@ -1,9 +1,7 @@
-// op4_interface.cpp
-// clang-format off
-#include <cstdint>
-#include <cstring>
+// src/op4_interface.cpp
 #include <op4.hh>
 
+// clang-format off
 extern "C" {
     __declspec(dllexport) void *OP4_New(const uint8_t *key);
     __declspec(dllexport) void OP4_Free(void *ctx);
@@ -15,7 +13,7 @@ extern "C" {
 void *OP4_New(const uint8_t *key)
 {
     try {
-        auto *p = new Cipher::OP4(key);
+        auto *p = new cipher::OP4(key);
         return p;
     } catch (...) {
         return nullptr;
@@ -24,7 +22,7 @@ void *OP4_New(const uint8_t *key)
 
 void OP4_Free(void *ctx)
 {
-    delete static_cast<Cipher::OP4 *>(ctx);
+    delete static_cast<cipher::OP4 *>(ctx);
 }
 
 int OP4_CTRCrypt(void *ctx, uint8_t *out, const uint8_t *in, uint32_t len,
@@ -35,7 +33,7 @@ int OP4_CTRCrypt(void *ctx, uint8_t *out, const uint8_t *in, uint32_t len,
     }
 
     try {
-        auto *cipher = static_cast<Cipher::OP4 *>(ctx);
+        auto *cipher = static_cast<cipher::OP4 *>(ctx);
         cipher->ctr_crypt(out, in, len, nonce, counter);
         return 0;
     } catch (...) {
