@@ -3,3 +3,7 @@ x86/
 .vs/
 .vscode/
 build/
+
+# VS
+*.sln*
+*.vcpro*
