@@ -95,8 +95,8 @@ namespace test {
 void op4_test()
 {
     auto encryption_test = []() {
-        constexpr size_t length = Cipher::OP4_BL * 3;
-        constexpr auto ks = Cipher::OP4_KL;
+        constexpr size_t length = OP4_BL * 3;
+        constexpr size_t ks = OP4_KS;
 
         // 初始化
         const char *buffer = {
@@ -111,16 +111,16 @@ void op4_test()
         memcpy(plaintext, buffer, strlen(buffer));
 
         // 初始化加密上下文
-        byte key[static_cast<int>(ks)] = {0xd6, 0xc4, 0x15, 0x30, 0xbe, 0xc2, 0xfa, 0x65,
-                                          0x50, 0x54, 0xd0, 0xb1, 0xa6, 0xa2, 0x8e, 0x34,
-                                          0x99, 0xb2, 0x1e, 0xf4, 0x91, 0x1e, 0x2d, 0x5c,
-                                          0x45, 0x5d, 0xb9, 0xbb, 0x69, 0xc1, 0x41, 0xb6};
-        byte nonce[12] = {0xed, 0xc4, 0x2b, 0x60, 0x9f, 0xb4, 0xa8, 0x11, 0x55, 0x60, 0xb1, 0x8e};
+        byte key[ks] = {0xd6, 0xc4, 0x15, 0x30, 0xbe, 0xc2, 0xfa, 0x65, 0x50, 0x54, 0xd0,
+                        0xb1, 0xa6, 0xa2, 0x8e, 0x34, 0x99, 0xb2, 0x1e, 0xf4, 0x91, 0x1e,
+                        0x2d, 0x5c, 0x45, 0x5d, 0xb9, 0xbb, 0x69, 0xc1, 0x41, 0xb6};
+        byte nonce[OP4_NL] = {0xed, 0xc4, 0x2b, 0x60, 0x9f, 0xb4,
+                              0xa8, 0x11, 0x55, 0x60, 0xb1, 0x8e};
         u32 counter = 0U;
         printf("key:\t\t\t\t\t\t\t\tnonce:\n");
         test::print_diff_hex(key, nonce, sizeof(key), sizeof(nonce), 16, true);
 
-        Cipher::OP4 op4(key);
+        OP4 op4(key);
 
         // 加密和解密
         printf("ciphertext:\t\t\t\t\t\t\tplaintext:\n");
@@ -146,7 +146,7 @@ void op4_test()
         std::vector<double> total_timer(count);
         byte *out = new byte[length];
         byte *in = new byte[length];
-        Cipher::OP4 op4(key);
+        OP4 op4(key);
 
         for (u32 r = 0; r < count; ++r) {
             auto start = timer();
@@ -164,15 +164,10 @@ void op4_test()
             "\tMin time taken: {:.4f}.\n"
             "\tMax time taken: {:.4f}.\n"
             "\tAvg time taken: {:.4f}.\n",
-            (static_cast<double>(length) / 1024 / 1024),
-            min_timer,
-            max_timer,
-            avg_timer
-        );
+            (static_cast<double>(length) / 1024 / 1024), min_timer, max_timer, avg_timer);
         std::cout << std::format(
             "Average performance: {:.4f} MB/s.",
-            (static_cast<double>(length) / avg_timer) / 1024 / 1024
-        );
+            (static_cast<double>(length) / avg_timer) / 1024 / 1024);
 
         delete[] out;
         delete[] in;

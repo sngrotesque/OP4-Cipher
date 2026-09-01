@@ -1,4 +1,4 @@
-#include "op4.hh"
+#include <op4.hh>
 
 #include <immintrin.h>
 #include <memory.h>
@@ -116,11 +116,11 @@ namespace {
 
     inline K8 ks8(
         s256 v0, s256 v1, s256 v2, s256 v3,
-        const u32 (&trk)[Cipher::OP4_NR][4],
+        const u32 (&trk)[OP4_NR][4],
         const s256 m0, const s256 m1, const s256 m2, const s256 m3
     ) noexcept
     {
-        for (u32 r = 0; r < Cipher::OP4_NR; ++r) {
+        for (u32 r = 0; r < OP4_NR; ++r) {
             const s256 k0 = _mm256_set1_epi32((int)trk[r][0]);
             const s256 k1 = _mm256_set1_epi32((int)trk[r][1]);
             const s256 k2 = _mm256_set1_epi32((int)trk[r][2]);
@@ -165,19 +165,17 @@ namespace {
 }
 
 namespace {
-    using namespace Cipher;
-
-    inline void prevent_zero_key(u8 key[OP4_KL]) noexcept
+    inline void prevent_zero_key(u8 key[OP4_KS]) noexcept
     {
         // Prevent weak keys
-        for (u32 ki = 0; ki < OP4_KL; ++ki) {
+        for (u32 ki = 0; ki < OP4_KS; ++ki) {
             key[ki] ^= (((key[ki] + ki) - key[ki]) ^ (key[ki] << 1) ^ (key[ki] >> 4));
         }
     }
 
-    inline void key_obfuscation(u8 k[OP4_KL]) noexcept
+    inline void key_obfuscation(u8 k[OP4_KS]) noexcept
     {
-        for (u32 i = 0; i < OP4_KL; i += 4) {
+        for (u32 i = 0; i < OP4_KS; i += 4) {
             k[i] += rotl8(k[i] ^ k[i + 1] ^ k[i + 2] ^ k[i + 3], 5);
         }
         u32 v[8]{};
@@ -211,7 +209,7 @@ namespace {
         pack32le(k + 28, t[7]);
     }
 
-    inline void key_schedule_transformation(u8 key[OP4_KL]) noexcept
+    inline void key_schedule_transformation(u8 key[OP4_KS]) noexcept
     {
         for (u32 r = 0; r < OP4_NR; ++r) {
             prevent_zero_key(key);
@@ -219,115 +217,113 @@ namespace {
         }
     }
 
-    inline void key_extension(const u8 key[OP4_KL], u8 round_key[OP4_RKL]) noexcept
+    inline void key_extension(const u8 key[OP4_KS], u8 round_key[OP4_RKL]) noexcept
     {
-        u8 copy_key[OP4_KL]{0};
-        memcpy(copy_key, key, OP4_KL);
+        u8 copy_key[OP4_KS]{0};
+        memcpy(copy_key, key, OP4_KS);
 
         for (u32 i = 0; i < OP4_NK; ++i) {
             key_schedule_transformation(copy_key);
-            memcpy(round_key + i * OP4_KL, copy_key, OP4_KL);
+            memcpy(round_key + i * OP4_KS, copy_key, OP4_KS);
         }
 
-        SecureZeroMemory(copy_key, OP4_KL);
+        SecureZeroMemory(copy_key, OP4_KS);
     }
 }
 
-namespace Cipher {
-    OP4::OP4(const u8 key[OP4_KL])
-    {
-        if (!key) {
-            throw std::runtime_error("key is nullptr.");
-        }
-        key_extension(key, m_round_key);
+OP4::OP4(const u8 key[OP4_KS])
+{
+    if (!key) {
+        throw std::runtime_error("key is nullptr.");
+    }
+    key_extension(key, m_round_key);
 
+    for (u32 r = 0; r < OP4_NR; ++r) {
+        for (u32 j = 0; j < 4; ++j) {
+            m_table_rk[r][j] = load32le(m_round_key + r * OP4_BL + j * 4);
+        }
+    }
+}
+
+OP4::~OP4()
+{
+    SecureZeroMemory(m_round_key, sizeof(m_round_key));
+    SecureZeroMemory(m_table_rk, sizeof(m_table_rk));
+}
+
+void OP4::ctr_crypt(u8 *out, const u8 *in, size_t len, const u8 *n, u32 c) const
+{
+    if (!out || !in || !n) {
+        throw std::runtime_error("out/in/nonce is nullptr.");
+    }
+    if (len == 0) {
+        return;
+    }
+
+    const s256 n0 = _mm256_set1_epi32((int)load32le(n + 0));
+    const s256 n1 = _mm256_set1_epi32((int)load32le(n + 4));
+    const s256 n2 = _mm256_set1_epi32((int)load32le(n + 8));
+    const s256 m0 = _mm256_set1_epi32((int)0x71e961ddU);
+    const s256 m1 = _mm256_set1_epi32((int)0x47dff15dU);
+    const s256 m2 = _mm256_set1_epi32((int)0x172f4f2fU);
+    const s256 m3 = _mm256_set1_epi32((int)0xf9c1e3c7U);
+
+    u32 ctr = c;
+    size_t full = len / OP4_BL;
+    const size_t tail = len % OP4_BL;
+
+    // 主循环：每次 16 块 = 每组 8 块交错
+    while (full >= 16) {
+        s256 a0, a1, a2, a3, b0, b1, b2, b3;
+
+        init8(a0, a1, a2, a3, n0, n1, n2, ctr);
+        init8(b0, b1, b2, b3, n0, n1, n2, ctr + 8);
+
+        // 两组共用同一批轮密钥广播，编译器内联后会自动交织指令
         for (u32 r = 0; r < OP4_NR; ++r) {
-            for (u32 j = 0; j < 4; ++j) {
-                m_table_rk[r][j] = load32le(m_round_key + r * OP4_BL + j * 4);
-            }
+            const s256 k0 = _mm256_set1_epi32((int)m_table_rk[r][0]);
+            const s256 k1 = _mm256_set1_epi32((int)m_table_rk[r][1]);
+            const s256 k2 = _mm256_set1_epi32((int)m_table_rk[r][2]);
+            const s256 k3 = _mm256_set1_epi32((int)m_table_rk[r][3]);
+
+            round8(a0, a1, a2, a3, k0, k1, k2, k3, m0, m1, m2, m3);
+            round8(b0, b1, b2, b3, k0, k1, k2, k3, m0, m1, m2, m3);
         }
+
+        xor_store8(out,       in,       pack8(a0, a1, a2, a3));
+        xor_store8(out + 128, in + 128, pack8(b0, b1, b2, b3));
+
+        out += 256;
+        in += 256;
+        full -= OP4_BL;
+        ctr += OP4_BL;
     }
 
-    OP4::~OP4()
-    {
-        SecureZeroMemory(m_round_key, sizeof(m_round_key));
-        SecureZeroMemory(m_table_rk, sizeof(m_table_rk));
+    // 剩余 8 块
+    if (full >= 8) {
+        s256 a0, a1, a2, a3;
+
+        init8(a0, a1, a2, a3, n0, n1, n2, ctr);
+        xor_store8(out, in, ks8(a0, a1, a2, a3, m_table_rk, m0, m1, m2, m3));
+
+        out += 128;
+        in += 128;
+        full -= 8;
+        ctr += 8;
     }
 
-    void OP4::ctr_crypt(u8 *out, const u8 *in, size_t len, const u8 *n, u32 c) const
-    {
-        if (!out || !in || !n) {
-            throw std::runtime_error("out/in/nonce is nullptr.");
-        }
-        if (len == 0) {
-            return;
-        }
+    // ---- 尾部（≤7 整块 + ≤15 字节）：多算几个块无所谓，反正每次调用只有一次 ----
+    if (full > 0 || tail > 0) {
+        alignas(32) u8 buf[128];
+        s256 a0, a1, a2, a3;
 
-        const s256 n0 = _mm256_set1_epi32((int)load32le(n + 0));
-        const s256 n1 = _mm256_set1_epi32((int)load32le(n + 4));
-        const s256 n2 = _mm256_set1_epi32((int)load32le(n + 8));
-        const s256 m0 = _mm256_set1_epi32((int)0x71e961ddU);
-        const s256 m1 = _mm256_set1_epi32((int)0x47dff15dU);
-        const s256 m2 = _mm256_set1_epi32((int)0x172f4f2fU);
-        const s256 m3 = _mm256_set1_epi32((int)0xf9c1e3c7U);
+        init8(a0, a1, a2, a3, n0, n1, n2, ctr);
 
-        u32 ctr = c;
-        size_t full = len / OP4_BL;
-        const size_t tail = len % OP4_BL;
+        store8(buf, ks8(a0, a1, a2, a3, m_table_rk, m0, m1, m2, m3));
 
-        // 主循环：每次 16 块 = 每组 8 块交错
-        while (full >= 16) {
-            s256 a0, a1, a2, a3, b0, b1, b2, b3;
-
-            init8(a0, a1, a2, a3, n0, n1, n2, ctr);
-            init8(b0, b1, b2, b3, n0, n1, n2, ctr + 8);
-
-            // 两组共用同一批轮密钥广播，编译器内联后会自动交织指令
-            for (u32 r = 0; r < OP4_NR; ++r) {
-                const s256 k0 = _mm256_set1_epi32((int)m_table_rk[r][0]);
-                const s256 k1 = _mm256_set1_epi32((int)m_table_rk[r][1]);
-                const s256 k2 = _mm256_set1_epi32((int)m_table_rk[r][2]);
-                const s256 k3 = _mm256_set1_epi32((int)m_table_rk[r][3]);
-
-                round8(a0, a1, a2, a3, k0, k1, k2, k3, m0, m1, m2, m3);
-                round8(b0, b1, b2, b3, k0, k1, k2, k3, m0, m1, m2, m3);
-            }
-
-            xor_store8(out,       in,       pack8(a0, a1, a2, a3));
-            xor_store8(out + 128, in + 128, pack8(b0, b1, b2, b3));
-
-            out += 256;
-            in += 256;
-            full -= OP4_BL;
-            ctr += OP4_BL;
-        }
-
-        // 剩余 8 块
-        if (full >= 8) {
-            s256 a0, a1, a2, a3;
-
-            init8(a0, a1, a2, a3, n0, n1, n2, ctr);
-            xor_store8(out, in, ks8(a0, a1, a2, a3, m_table_rk, m0, m1, m2, m3));
-
-            out += 128;
-            in += 128;
-            full -= 8;
-            ctr += 8;
-        }
-
-        // ---- 尾部（≤7 整块 + ≤15 字节）：多算几个块无所谓，反正每次调用只有一次 ----
-        if (full > 0 || tail > 0) {
-            alignas(32) u8 buf[128];
-            s256 a0, a1, a2, a3;
-
-            init8(a0, a1, a2, a3, n0, n1, n2, ctr);
-
-            store8(buf, ks8(a0, a1, a2, a3, m_table_rk, m0, m1, m2, m3));
-
-            const size_t t = (full * OP4_BL) + tail;
-            for (size_t i = 0; i < t; ++i) {
-                out[i] = in[i] ^ buf[i];
-            }
+        const size_t t = (full * OP4_BL) + tail;
+        for (size_t i = 0; i < t; ++i) {
+            out[i] = in[i] ^ buf[i];
         }
     }
 }

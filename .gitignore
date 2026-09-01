@@ -1,9 +1,10 @@
+# VS
 x64/
 x86/
 .vs/
 .vscode/
 build/
-
-# VS
+WizardKey_OP4/
+WizardKey_OP4.*
 *.sln*
 *.vcxproj*
