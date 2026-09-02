@@ -162,6 +162,9 @@ namespace cipher::op4::avx2 {
         if (len == 0) {
             return;
         }
+        if (c == UINT32_MAX) {
+            throw std::runtime_error("The counter has been exhausted.");
+        }
 
         const s256 n0 = _mm256_set1_epi32((int)load32le(n + 0));
         const s256 n1 = _mm256_set1_epi32((int)load32le(n + 4));

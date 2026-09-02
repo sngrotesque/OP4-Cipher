@@ -1,4 +1,4 @@
-// src/op4.cc
+// src/op4_soft.cc
 #include <op4_soft.hh>
 #include <key_extension.hh>
 
@@ -36,7 +36,7 @@ namespace {
             for (u32 r = 0; r < op4::nr; ++r) {
                 // shift bit add
                 state[0] = rotl32(state[0], 13) + state[1] + state[2] + state[3];
-                state[1] = rotl32(state[1], 7)  + state[2] + state[3] + state[0];
+                state[1] = rotl32(state[1], 7) + state[2] + state[3] + state[0];
                 state[2] = rotl32(state[2], 11) + state[3] + state[0] + state[1];
                 state[3] = rotl32(state[3], 15) + state[0] + state[1] + state[2];
                 // multiply
@@ -52,6 +52,11 @@ namespace {
             for (u32 i = 0; i < op4_sbl; ++i) {
                 pack32le(out + i * sizeof(u32), state[i]);
             }
+
+#ifdef SECURE_ROUNDS_CIPHER
+            SecureZeroMemory(keystream, sizeof(keystream));
+            SecureZeroMemory(state, sizeof(state));
+#endif
         }
     }
 
@@ -65,8 +70,11 @@ namespace {
             for (u32 i = 0; i < op4_sbl; ++i) {
                 state[i] = load32le(in + i * sizeof(u32));
             }
-            for (u32 i = 0; i < op4_rks_32; ++i) {
-                keystream[op4_rks_32 - i - 1] = load32le(rk + i * sizeof(u32));
+            for (u32 r = 0; r < op4::nr; ++r) {
+                for (u32 j = 0; j < op4_sbl; ++j) {
+                    keystream[(op4::nr - r - 1) * op4_sbl + j] = load32le(
+                        rk + (r * op4_sbl + j) * sizeof(u32));
+                }
             }
 
             // 解密
@@ -89,6 +97,11 @@ namespace {
             for (u32 i = 0; i < op4_sbl; ++i) {
                 pack32le(out + i * sizeof(u32), state[i]);
             }
+
+#ifdef SECURE_ROUNDS_CIPHER
+            SecureZeroMemory(keystream, sizeof(keystream));
+            SecureZeroMemory(state, sizeof(state));
+#endif
         }
     }
 }
@@ -146,6 +159,12 @@ namespace cipher::op4::soft {
 
     void OP4::ctr_crypt(byte *out, const byte *in, size_t len, const byte *n, u32 c) const
     {
+        if (!out || !in || !n) {
+            throw std::runtime_error("out/in/nonce is nullptr.");
+        }
+        if (len == 0) {
+            return;
+        }
         if (c == UINT32_MAX) {
             throw std::runtime_error("The counter has been exhausted.");
         }

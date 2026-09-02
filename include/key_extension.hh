@@ -3,7 +3,61 @@
 #include <op4.hh>
 #include <bit_utils.hh>
 
-namespace cipher::op4 {
+namespace {
+    inline byte byte_top(byte x)
+    {
+        return x >> 4;
+    }
+
+    inline byte byte_bot(byte x)
+    {
+        return x & 0x0f;
+    }
+
+    inline byte byte_swap(byte x)
+    {
+        return (byte_bot(x) << 4) | byte_top(x);
+    }
+
+    inline void byte_swap_bot_top(byte &x, byte &y)
+    {
+        byte x_top = byte_top(x);
+        byte x_bot = byte_bot(x);
+
+        byte y_top = byte_top(y);
+        byte y_bot = byte_bot(y);
+
+        x = (x_top << 4) | y_top;
+        y = (x_bot << 4) | y_bot;
+    }
+
+    inline void byte_swap_top_bot(byte &x, byte &y)
+    {
+        byte x_top = byte_top(x);
+        byte x_bot = byte_bot(x);
+
+        byte y_top = byte_top(y);
+        byte y_bot = byte_bot(y);
+
+        x = (y_bot << 4) | x_bot;
+        y = (y_top << 4) | x_top;
+    }
+
+    inline byte byte_swap_bot_top_add(byte x, byte y)
+    {
+        byte x_top = byte_top(x);
+        byte x_bot = byte_bot(x);
+
+        byte y_top = byte_top(y);
+        byte y_bot = byte_bot(y);
+
+        return ((x_top << 4) | y_top) + ((x_bot << 4) | y_bot);
+    }
+}
+
+namespace {
+    using namespace cipher;
+
     inline void prevent_zero_key(byte key[op4::ks]) noexcept
     {
         // Prevent weak keys
@@ -55,7 +109,9 @@ namespace cipher::op4 {
             key_obfuscation(key);
         }
     }
+}
 
+namespace cipher::op4 {
     inline void key_extension(byte round_key[op4::rks], const byte key[op4::ks]) noexcept
     {
         byte copy_key[op4::ks]{0};

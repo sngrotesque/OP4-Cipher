@@ -1,3 +1,4 @@
+// test/test.hh
 #pragma once
 #include <algorithm>
 #include <iostream>
@@ -5,8 +6,12 @@
 #include <vector>
 #include <chrono>
 #include <numeric>
+#include <random>
+#include <set>
 
 using byte = uint8_t;
+using u32 = uint32_t;
+using u64 = uint64_t;
 
 // clang-format off
 namespace test {
@@ -83,5 +88,103 @@ namespace test {
         if (newline) {
             std::cout << "\n";
         }
+    }
+}
+
+// clang-format on
+namespace test {
+    class PRNG {
+    private:
+        std::mt19937_64 m_rng;
+
+    public:
+        explicit PRNG(u64 seed) noexcept
+            : m_rng(seed)
+        {
+        }
+
+        u64 next_u64() noexcept
+        {
+            return m_rng();
+        }
+
+        u32 next_u32() noexcept
+        {
+            return m_rng() & UINT32_MAX;
+        }
+
+        byte next_byte() noexcept
+        {
+            return m_rng() & UINT8_MAX;
+        }
+
+        // [0, bound) 均匀取值（测试用途，取模偏差可忽略）
+        u32 below(u32 bound) noexcept
+        {
+            return next_u32() % bound;
+        }
+
+        void fill_bytes(byte *p, size_t n) noexcept
+        {
+            while (n > 0) {
+                *p++ = next_byte();
+                n--;
+            }
+        }
+
+        template <typename T> T randint(T min, T max)
+        {
+            return std::uniform_int_distribution<T>(min, max)(m_rng);
+        }
+    };
+
+    inline bool mem_eq(const byte *a, const byte *b, size_t n) noexcept
+    {
+        return (n == 0) || (std::memcmp(a, b, n) == 0);
+    }
+
+    inline std::string bytes_to_hex(const byte *p, size_t n)
+    {
+        static constexpr char digits[] = "0123456789abcdef";
+        std::string s;
+        s.reserve(n * 2);
+        for (size_t i = 0; i < n; ++i) {
+            s.push_back(digits[p[i] >> 4]);
+            s.push_back(digits[p[i] & 0x0f]);
+        }
+        return s;
+    }
+
+    // 十六进制字符串 -> 字节串；长度不符或含非法字符返回 false
+    inline bool hex_to_bytes(const char *hex, byte *out, size_t n) noexcept
+    {
+        auto nib = [](char c) -> int {
+            if (c >= '0' && c <= '9')
+                return c - '0';
+            if (c >= 'a' && c <= 'f')
+                return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F')
+                return c - 'A' + 10;
+            return -1;
+        };
+
+        for (size_t i = 0; i < n; ++i) {
+            const int hi = nib(hex[2 * i]);
+            const int lo = nib(hex[2 * i + 1]);
+            if (hi < 0 || lo < 0) {
+                return false;
+            }
+            out[i] = static_cast<byte>((hi << 4) | lo);
+        }
+        return hex[2 * n] == '\0';
+    }
+
+    inline void report(const std::string_view &message, bool pass, bool indent = false) noexcept
+    {
+        constexpr std::string_view str_pass("\x1b[92mPASS\x1b[0m");
+        constexpr std::string_view str_fail("\x1b[91mFAIL\x1b[0m");
+
+        std::cout << std::format(
+            "{}[{}] {}\n", indent ? "\t" : "", pass ? str_pass : str_fail, message);
     }
 }
