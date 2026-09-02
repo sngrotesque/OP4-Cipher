@@ -1,5 +1,5 @@
 # OP4 (v2.0)
-![C++](https://img.shields.io/badge/C%2B%2B-20%2B-blue) ![SIMD](https://img.shields.io/badge/SIMD-AVX2-orange) ![Benchmark](https://img.shields.io/badge/AVX2-3.8%20GB%2Fs-brightgreen) ![Tests](https://img.shields.io/badge/tests-11%2F11%20passed-success) ![License](https://img.shields.io/badge/license-MIT-green)
+![C++](https://img.shields.io/badge/C%2B%2B-20%2B-blue) ![SIMD](https://img.shields.io/badge/SIMD-AVX2-orange) ![Benchmark](https://img.shields.io/badge/AVX2-3.8%20GB%2Fs-brightgreen) ![Tests](https://img.shields.io/badge/tests-11%2F11%20passed-success) ![License](https://img.shields.io/badge/license-APACHE2-green)
 
 > **OP4** 是一个自行设计的 128-bit 分组对称加密算法：256-bit 密钥、96-bit nonce、CTR 模式，
 > 附带 AVX2 向量化实现。两个文件、零依赖，在消费级 CPU 上吞吐约 **3.8 GB/s**。
