@@ -1,9 +1,9 @@
 // include/key_extension.hh
 #pragma once
-#include <op4.hh>
+#include <op4_constant.hh>
 #include <bit_utils.hh>
 
-namespace {
+namespace cipher::op4::detail {
     inline byte byte_top(byte x)
     {
         return x >> 4;
@@ -18,95 +18,49 @@ namespace {
     {
         return (byte_bot(x) << 4) | byte_top(x);
     }
-
-    inline void byte_swap_bot_top(byte &x, byte &y)
-    {
-        byte x_top = byte_top(x);
-        byte x_bot = byte_bot(x);
-
-        byte y_top = byte_top(y);
-        byte y_bot = byte_bot(y);
-
-        x = (x_top << 4) | y_top;
-        y = (x_bot << 4) | y_bot;
-    }
-
-    inline void byte_swap_top_bot(byte &x, byte &y)
-    {
-        byte x_top = byte_top(x);
-        byte x_bot = byte_bot(x);
-
-        byte y_top = byte_top(y);
-        byte y_bot = byte_bot(y);
-
-        x = (y_bot << 4) | x_bot;
-        y = (y_top << 4) | x_top;
-    }
-
-    inline byte byte_swap_bot_top_add(byte x, byte y)
-    {
-        byte x_top = byte_top(x);
-        byte x_bot = byte_bot(x);
-
-        byte y_top = byte_top(y);
-        byte y_bot = byte_bot(y);
-
-        return ((x_top << 4) | y_top) + ((x_bot << 4) | y_bot);
-    }
 }
 
-namespace {
-    using namespace cipher;
+namespace cipher::op4::detail {
+    constexpr u32 key_constant[8] = {
+        0x38183a08U, 0x7bd0dfcaU, 0x25e9e4d5U, 0xcf4c5d88U,
+        0x98317698U, 0x2ef6ef14U, 0x47c6abd9U, 0x644c7ad7U
+    };
 
-    inline void prevent_zero_key(byte key[op4::ks]) noexcept
+    inline void key_extension_step1(byte key[op4::ks], const byte origin_key[op4::ks])
     {
-        // Prevent weak keys
-        for (u32 ki = 0; ki < op4::ks; ++ki) {
-            key[ki] ^= (((key[ki] + ki) - key[ki]) ^ (key[ki] << 1) ^ (key[ki] >> 4));
+        for (u32 i = 0; i < 8; ++i) {
+            pack32le(key + i * 4, load32le(origin_key + i * 4) ^ key_constant[i]);
         }
     }
 
-    inline void key_obfuscation(byte k[op4::ks]) noexcept
+    inline void key_extension_step2(byte key[op4::ks], const byte origin_key[op4::ks])
     {
-        for (u32 i = 0; i < op4::ks; i += 4) {
-            k[i] += rotl8(k[i] ^ k[i + 1] ^ k[i + 2] ^ k[i + 3], 5);
+        constexpr u32 ks_half = op4::ks / 2;
+        for (u32 i = 0; i < ks_half; ++i) {
+            key[i]           += origin_key[i] + byte_swap(origin_key[i + ks_half]);
+            key[i + ks_half] += origin_key[i + ks_half] + byte_swap(origin_key[i]);
         }
-        u32 v[8]{};
-        u32 t[8]{};
-
-        t[0] = (v[0] = load32le(k));
-        t[1] = (v[1] = load32le(k + 4));
-        t[2] = (v[2] = load32le(k + 8));
-        t[3] = (v[3] = load32le(k + 12));
-        t[4] = (v[4] = load32le(k + 16));
-        t[5] = (v[5] = load32le(k + 20));
-        t[6] = (v[6] = load32le(k + 24));
-        t[7] = (v[7] = load32le(k + 28));
-
-        t[7] += rotl32((v[0] ^ v[7]) + v[6], 15);
-        t[6] += rotl32((v[7] ^ v[6]) + v[5], 19);
-        t[5] += rotl32((v[6] ^ v[5]) + v[4], 21);
-        t[4] += rotl32((v[5] ^ v[4]) + v[3], 29);
-        t[3] += rotl32((v[4] ^ v[3]) + v[2], 13);
-        t[2] += rotl32((v[3] ^ v[2]) + v[1], 7);
-        t[1] += rotl32((v[2] ^ v[1]) + v[0], 23);
-        t[0] += rotl32((v[1] ^ v[0]) + v[7], 17);
-
-        pack32le(k, t[0]);
-        pack32le(k + 4, t[1]);
-        pack32le(k + 8, t[2]);
-        pack32le(k + 12, t[3]);
-        pack32le(k + 16, t[4]);
-        pack32le(k + 20, t[5]);
-        pack32le(k + 24, t[6]);
-        pack32le(k + 28, t[7]);
     }
 
-    inline void key_schedule_transformation(byte key[op4::ks]) noexcept
+    inline void key_extension_step3(byte key[op4::ks], u32 iter)
     {
+        constexpr u32 shift_n[8] = {7, 11, 21, 8, 2, 13, 12, 17};
+        constexpr u32 golden = 0x9E3779B9U;
+
+        u32 dk[8] = {}; // diffusion key
+
+        for (u32 i = 0; i < (op4::ks / 4); ++i) {
+            dk[i] = load32le(key + i * 4);
+        }
         for (u32 r = 0; r < op4::nr; ++r) {
-            prevent_zero_key(key);
-            key_obfuscation(key);
+            u32 rc = golden * (r + 1 + iter * op4::nr);
+            for (u32 i = 0; i < 8; ++i) {
+                u32 x0 = dk[(i + 1) & 7] + dk[(i + 2) & 7];
+                dk[i] += rotl32(x0, shift_n[i]) + dk[(i + 3) & 7] + rc;
+            }
+        }
+        for (u32 i = 0; i < 8; ++i) {
+            pack32le(key + i * 4, dk[i]);
         }
     }
 }
@@ -114,14 +68,18 @@ namespace {
 namespace cipher::op4 {
     inline void key_extension(byte round_key[op4::rks], const byte key[op4::ks]) noexcept
     {
-        byte copy_key[op4::ks]{0};
-        memcpy(copy_key, key, op4::ks);
+        byte flush_key[op4::ks]{0};
+        memcpy(flush_key, key, op4::ks);
 
-        for (u32 i = 0; i < op4::nk; ++i) {
-            key_schedule_transformation(copy_key);
-            memcpy(round_key + i * op4::ks, copy_key, op4::ks);
+        detail::key_extension_step1(flush_key, key);
+
+        for (u32 i = 0; i < (op4::nr / 2); ++i) {
+            detail::key_extension_step2(flush_key, key);
+            detail::key_extension_step3(flush_key, i);
+
+            memcpy(round_key + i * op4::ks, flush_key, op4::ks);
         }
 
-        SecureZeroMemory(copy_key, op4::ks);
+        SecureZeroMemory(flush_key, op4::ks);
     }
 }

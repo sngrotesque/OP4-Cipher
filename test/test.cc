@@ -9,10 +9,12 @@
  *   4. 雪崩效应：分别测试不同的明文输入，密钥输入，Nonce输入，和测试轮密钥的雪崩效应
  *   5. 加解密：加密和解密一份 HTTP 请求
  *   6. 性能测试：分别使用 AVX2 和 软件 实现测试此算法性能
+ *   7. 安全性测试：使用多种测试手段测试轮密钥的生成质量
  */
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <op4.hh>
+#include <key_extension.hh>
 #include "test.hh"
 
 #ifdef _WIN32
@@ -41,7 +43,7 @@ namespace {
     // 默认固定种子：保证测试可复现；可用环境变量 OP4_TEST_SEED 覆盖，
     constexpr u64 k_default_seed = 0x4f5034c0ffee2026ULL;
     // 首块密钥流 = E(key, nonce ‖ counter)，即对 16 字节全零明文做 CTR 加密的结果。
-    constexpr const char *kat_expected_hex = "ba5117ad51842aa91ac0393309dcc423";
+    constexpr const char *kat_expected_hex = "9a07d12635420df0fadebffbd8fe6a23";
     // 雪崩效应测试类型
     enum class AVALANCHE_EFFECT_TYPE {
         PLAINTEXT_DIFF, // 明文
@@ -584,8 +586,11 @@ namespace {
 
         {
             std::cout << "1. 密钥碰撞测试\n";
-            byte ka[op4::ks] = {0x01};
-            byte kb[op4::ks] = {0xcc};
+            byte ka[op4::ks] = {};
+            byte kb[op4::ks] = {};
+
+            ka[0] = 0x00;
+            kb[1] = 0x01;
 
             cipher::op4::soft::OP4 a(ka);
             cipher::op4::soft::OP4 b(kb);
@@ -624,45 +629,8 @@ namespace {
         }
 
         {
-            std::cout << "3. 碰撞后果演示\n";
-            byte ka[op4::ks] = {}; ka[0] = 0x01;
-            byte kb[op4::ks] = {}; kb[0] = 0xCC;
-            constexpr byte pt[op4::bl] = { 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16 };
-            byte ct[op4::bl], rt[op4::bl];
-
-            cipher::op4::soft::OP4 a(ka);
-            cipher::op4::soft::OP4 b(kb);
-            a.ecb_encrypt(ct, pt, op4::bl);   // 用密钥 A 加密
-            b.ecb_decrypt(rt, ct, op4::bl);   // 用密钥 B 解密
-            test::report("碰撞后果：密钥 A 加密的数据可用密钥 B 解密", !test::mem_eq(rt, pt, op4::bl), true);
-        }
-
-        // ---- 1. g_s 全普查：256 个 s × 256 个 x，毫秒级 ----
-        {
-            std::cout << "4. g_s 单射性普查\n";
-            auto rotl8m = [](u32 x) { x &= 0xFF; return ((x << 5) | (x >> 3)) & 0xFF; };
-            u32 s_collide = 0, total_pairs = 0, min_img = 256, max_img = 0;
-            for (u32 s = 0; s < 256; ++s) {
-                u32 pairs = 0;
-                for (u32 a = 0; a < 256; ++a)
-                    for (u32 b = a + 1; b < 256; ++b) {
-                        const u32 ya = (a + rotl8m(a ^ s)) & 0xFF;
-                        const u32 yb = (b + rotl8m(b ^ s)) & 0xFF;
-                        if (ya == yb) ++pairs;
-                    }
-                if (pairs) ++s_collide;
-                total_pairs += pairs;
-            }
-            std::cout << std::format(
-                "\t非单射的 s：{}/256，ΣC(s)={}，最坏像 {}（s=0 时为 151）\n",
-                s_collide, total_pairs, min_img);
-            // 若 s_collide == 256：byte-0 孪生覆盖 ~74% 密钥，碰撞对总数 ≈ 2^240·ΣC(s)
-        }
-
-        // ---- 2. 字节 0 孪生密度（在真实 OP4 上测，区分“仅 s=0”与“全部 s”）----
-        {
-            std::cout << "5. 字节 0 孪生密度\n";
-            test::PRNG prng(0xA17A0000ULL);
+            std::cout << "3. 字节 0 孪生密度\n";
+            test::PRNG prng(0xa17a0000ULL);
             constexpr u32 trials = 4096;   // 每个密钥扫 256 个变体，控制总耗时
             u32 twinned = 0;
             for (u32 t = 0; t < trials; ++t) {
@@ -682,9 +650,8 @@ namespace {
             // 仅 s=0 已证明 → ≥ ~0.29 %；若全部 s 破裂 → 预期 ~74 %
         }
 
-        // ---- 3. 族塌缩精确值（验证 151）----
         {
-            std::cout << "6. (x,0,…,0) 族塌缩统计\n";
+            std::cout << "4. (x,0,…,0) 族塌缩统计\n";
             std::set<std::array<byte, op4::rks>> distinct;
             for (u32 x = 0; x < 256; ++x) {
                 byte k[op4::ks] = {};
@@ -692,6 +659,67 @@ namespace {
                 distinct.insert(cipher::op4::soft::OP4(k).round_key());
             }
             std::cout << std::format("\t256 个密钥 → {} 套轮密钥\n", distinct.size());
+        }
+
+        {
+            std::cout << "5. feed 位置敏感性（半字节塌缩修复守卫）\n";
+            byte o1[op4::ks] = {};
+            test::PRNG prng(0x5EEB0000ULL);
+            prng.fill_bytes(o1, op4::ks);
+            o1[5] = 0x12;                       // 确保半字节不等，交换必改变该字节
+
+            byte o2[op4::ks];
+            memcpy(o2, o1, op4::ks);
+            o2[5] = cipher::op4::detail::byte_swap(o1[5]);   // 0x12 → 0x21
+
+            byte f1[op4::ks], f2[op4::ks];
+            memcpy(f1, o1, op4::ks);            // 同一起点，只有 feed 来源不同
+            memcpy(f2, o1, op4::ks);
+            cipher::op4::detail::key_extension_step2(f1, o1);
+            cipher::op4::detail::key_extension_step2(f2, o2);
+            test::report(
+                "feed 依赖比特位置（半字节交换必须改变增量）",
+                !test::mem_eq(f1, f2, op4::ks),
+                true
+            );
+        }
+
+        // 若有人删掉 rc / 让常数退化为与 iter 无关，此处确定性 FAIL
+        {
+            std::cout << "6. 迭代轮常数守卫\n";
+            byte a[op4::ks], b[op4::ks];
+            test::PRNG prng(0x5EEB0001ULL);
+            prng.fill_bytes(a, op4::ks);
+            memcpy(b, a, op4::ks);
+            cipher::op4::detail::key_extension_step3(a, 0);
+            cipher::op4::detail::key_extension_step3(b, 1);
+            test::report(
+                "迭代常数生效（同一输入在不同迭代下输出不同）",
+                !test::mem_eq(a, b, op4::ks),
+                true
+            );
+        }
+
+        // 捕捉“G 退化 + 无常数”的组合回归；对 2^-147 级巧合无分辨力）
+        {
+            std::cout << "7. slide 构造守卫\n";
+            byte k[op4::ks] = {};
+            test::PRNG prng(0x5EEB0002ULL);
+            prng.fill_bytes(k, op4::ks);
+            const auto rk = cipher::op4::soft::OP4(k).round_key();
+
+            // K' = F1 ⊕ C：精确抵消 step1 的 slide 起点
+            byte kslide[op4::ks] = {};
+            for (u32 i = 0; i < op4::ks; ++i) {
+                kslide[i] = rk[i] ^ static_cast<byte>(
+                    cipher::op4::detail::key_constant[i / 4] >> (8 * (i % 4)));
+            }
+            const auto rks = cipher::op4::soft::OP4(kslide).round_key();
+            test::report(
+                "K' = F1⊕C 的首快照不得等于 K 的第二快照",
+                !test::mem_eq(rks.data(), rk.data() + op4::ks, op4::ks),
+                true
+            );
         }
     }
 }

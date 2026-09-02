@@ -112,10 +112,7 @@ namespace cipher::op4::soft {
         if (!key) {
             throw std::runtime_error("key is nullptr.");
         }
-        byte copy_key[op4::ks] = {};
-        memcpy(copy_key, key, op4::ks);
-        op4::key_extension(m_round_key, copy_key);
-        memset(copy_key, 0, op4::ks);
+        op4::key_extension(m_round_key, key);
     }
 
     OP4::~OP4()
