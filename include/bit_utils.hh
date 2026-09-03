@@ -1,13 +1,6 @@
 // include/bit_utils.hh
 #pragma once
-#include <cstdint>
-#include <cstddef>
-#include <cstring>
-#include <stdexcept>
-#include <bit>
-
-using byte = uint8_t;
-using u32 = uint32_t;
+#include <core.hh>
 
 namespace cipher {
     inline void SecureZeroMemory(void *p, size_t n)

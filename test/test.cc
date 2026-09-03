@@ -11,10 +11,15 @@
  *   6. 性能测试：分别使用 AVX2 和 软件 实现测试此算法性能
  *   7. 安全性测试：使用多种测试手段测试轮密钥的生成质量
  */
+#ifndef OP4_LIBRARY
 #define _CRT_SECURE_NO_WARNINGS
 
+/**
+ * 使用 OP4_TEST 宏启用此文件的 main 函数
+ */
+
 #include <op4.hh>
-#include <key_extension.hh>
+#include <op4_key_extension.hh>
 #include "test.hh"
 
 #ifdef _WIN32
@@ -675,8 +680,8 @@ namespace {
             byte f1[op4::ks], f2[op4::ks];
             memcpy(f1, o1, op4::ks);            // 同一起点，只有 feed 来源不同
             memcpy(f2, o1, op4::ks);
-            cipher::op4::detail::key_extension_step2(f1, o1);
-            cipher::op4::detail::key_extension_step2(f2, o2);
+            cipher::op4::detail::mix_key_halves(f1, o1);
+            cipher::op4::detail::mix_key_halves(f2, o2);
             test::report(
                 "feed 依赖比特位置（半字节交换必须改变增量）",
                 !test::mem_eq(f1, f2, op4::ks),
@@ -691,8 +696,8 @@ namespace {
             test::PRNG prng(0x5EEB0001ULL);
             prng.fill_bytes(a, op4::ks);
             memcpy(b, a, op4::ks);
-            cipher::op4::detail::key_extension_step3(a, 0);
-            cipher::op4::detail::key_extension_step3(b, 1);
+            cipher::op4::detail::diffuse_key_words(a, 0);
+            cipher::op4::detail::diffuse_key_words(b, 1);
             test::report(
                 "迭代常数生效（同一输入在不同迭代下输出不同）",
                 !test::mem_eq(a, b, op4::ks),
@@ -703,6 +708,11 @@ namespace {
         // 捕捉“G 退化 + 无常数”的组合回归；对 2^-147 级巧合无分辨力）
         {
             std::cout << "7. slide 构造守卫\n";
+            constexpr u32 key_constant[8] = {
+                0x38183a08U, 0x7bd0dfcaU, 0x25e9e4d5U, 0xcf4c5d88U,
+                0x98317698U, 0x2ef6ef14U, 0x47c6abd9U, 0x644c7ad7U
+            };
+
             byte k[op4::ks] = {};
             test::PRNG prng(0x5EEB0002ULL);
             prng.fill_bytes(k, op4::ks);
@@ -711,8 +721,7 @@ namespace {
             // K' = F1 ⊕ C：精确抵消 step1 的 slide 起点
             byte kslide[op4::ks] = {};
             for (u32 i = 0; i < op4::ks; ++i) {
-                kslide[i] = rk[i] ^ static_cast<byte>(
-                    cipher::op4::detail::key_constant[i / 4] >> (8 * (i % 4)));
+                kslide[i] = rk[i] ^ static_cast<byte>(key_constant[i / 4] >> (8 * (i % 4)));
             }
             const auto rks = cipher::op4::soft::OP4(kslide).round_key();
             test::report(
@@ -747,6 +756,7 @@ void op4_test()
     }
 }
 
+#ifdef OP4_TEST
 int main()
 {
 #ifdef _WIN32
@@ -761,5 +771,7 @@ int main()
 #endif
     return 0;
 }
+#endif
 
 #undef _CRT_SECURE_NO_WARNINGS
+#endif

@@ -8,4 +8,7 @@ WizardKey_OP4/
 WizardKey_OP4.*
 *.sln*
 *.vcxproj*
+
+# 具体
 QA.md
+test.py

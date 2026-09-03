@@ -1,6 +1,6 @@
 // src/op4_soft.cc
 #include <op4_soft.hh>
-#include <key_extension.hh>
+#include <op4_key_extension.hh>
 
 #include <memory.h>
 

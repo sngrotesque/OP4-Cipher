@@ -1,5 +1,9 @@
 # OP4 (v2.0)
-![C++](https://img.shields.io/badge/C%2B%2B-20%2B-blue) ![SIMD](https://img.shields.io/badge/SIMD-AVX2-orange) ![Benchmark](https://img.shields.io/badge/AVX2-3.8%20GB%2Fs-brightgreen) ![Tests](https://img.shields.io/badge/tests-11%2F11%20passed-success) ![License](https://img.shields.io/badge/license-APACHE2-green)
+![C++](https://img.shields.io/badge/C%2B%2B-20%2B-blue) 
+![SIMD](https://img.shields.io/badge/SIMD-AVX2-orange) 
+![Benchmark](https://img.shields.io/badge/AVX2-3.8%20GB%2Fs-brightgreen) 
+![Tests](https://img.shields.io/badge/tests-11%2F11%20passed-success) 
+![License](https://img.shields.io/badge/license-APACHE2-green) 
 
 > **OP4** 是一个自行设计的 128-bit 分组对称加密算法：256-bit 密钥、96-bit nonce、CTR 模式，
 > 附带 AVX2 向量化实现。两个文件、零依赖，在消费级 CPU 上吞吐约 **3.8 GB/s**。
@@ -7,6 +11,9 @@
 > OP4 由 [栀子鱼鱼花 (SN-Grotesque)](https://github.com/sngrotesque) 设计与实现。
 
 **公开征集密码分析结果（欢迎 issue 讨论）**
+
+一些自分析报告：
+ - [密钥扩展算法](doc/key_extension.md)
 
 ---
 
@@ -22,9 +29,9 @@
 
 ---
 
-## 安全性声明
+## 免责声明
 
-> **OP4 是个人设计的实验性加密算法，未经任何第三方密码分析机构审计。**  
+> **OP4 是个人设计的加密算法，未经任何第三方密码分析人员审计。**  
 > **请勿用于生产环境中的机密数据加密。**   
 > 实际项目请使用 AES-256-GCM、ChaCha20-Poly1305 等经过广泛分析并标准化的算法。
 

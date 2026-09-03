@@ -4,7 +4,7 @@
 #include <array>
 
 namespace cipher::op4::soft {
-    class OP4 {
+    class OP4_API OP4 {
     private:
         alignas(16) byte m_round_key[op4::rks] = {};
 

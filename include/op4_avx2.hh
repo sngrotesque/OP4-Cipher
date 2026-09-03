@@ -4,7 +4,7 @@
 #include <array>
 
 namespace cipher::op4::avx2 {
-    class OP4 {
+    class OP4_API OP4 {
     private:
         alignas(16) byte m_round_key[op4::rks] = {};
         alignas(16) u32 m_table_rk[op4::nr][4] = {};

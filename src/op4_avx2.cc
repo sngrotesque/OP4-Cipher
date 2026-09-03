@@ -1,6 +1,6 @@
 // src/op4_avx2.cc
 #include <op4_avx2.hh>
-#include <key_extension.hh>
+#include <op4_key_extension.hh>
 
 #include <immintrin.h>
 #include <memory.h>
